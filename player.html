@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>選手 | 青山学院大学 陸上競技部 データベース</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header data-site-header></header>
+
+<main id="main">
+  <div class="loading" data-i18n="common.loading">読み込み中…</div>
+</main>
+
+<footer data-site-footer></footer>
+
+<script src="assets/i18n.js"></script>
+<script src="data/data.js"></script>
+<script src="assets/store.js"></script>
+<script src="assets/ui.js"></script>
+<script>
+const { loadStore, scoreText, formatScore } = window.AGUStore;
+const { mountLayout, renderTable, avatarHTML, fmtDateFull, fmtDateCell, remarkBadge, qs, lineChart, esc, el } = window.AGUUI;
+const { t, onLang } = window.AGUi18n;
+
+(async () => {
+
+mountLayout("players.html");
+const store = await loadStore();
+
+const id = Number(qs("id"));
+const student = store.student(id);
+
+const today = new Date();
+const todayISO = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
+if (!student) {
+  document.querySelector("#main").innerHTML = `
+    <section class="page-head"><h1>404</h1><p>${t("common.empty")}</p></section>`;
+} else {
+  const state = { chartItem: null, histItem: "all", include: "all" };
+
+  const posText = (p) => p === "main" ? t("position.main") : p === "sub_main" ? t("position.sub_main") : p === "leader" ? t("position.leader") : "";
+
+  function render() {
+    document.title = student.name + " | " + t("brand.title");
+    const main = document.querySelector("#main");
+    main.textContent = "";
+
+    const head = el("section", { class: "page-head" });
+    head.innerHTML = `<div class="breadcrumb"><a href="index.html">${t("nav.overview")}</a> / <a href="players.html">${t("pl.title")}</a> / ${esc(student.name)}</div>
+      <h1>${esc(student.name)}</h1>`;
+    main.append(head);
+
+    const top = el("section", { class: "player-top" });
+
+    // ---- プロフィール ----
+    const profile = el("div");
+    const pos = posText(student.position);
+    profile.innerHTML = `<div class="card profile">
+      ${avatarHTML(student, "lg")}
+      <div class="info">
+        <dl>
+          <dt>${t("common.name")}</dt><dd>${esc(student.name)}</dd>
+          <dt>${t("pp.kana")}</dt><dd>${esc(student.kana || "—")}</dd>
+          <dt>${t("pp.sex")}</dt><dd>${student.sex}</dd>
+          <dt>${t("pp.enrollment")}</dt><dd>${student.enrollmentYear}${t("common.year")}</dd>
+          <dt>${t("pp.hs")}</dt><dd>${esc(store.schoolName(student.highSchoolId) || "—")}${store.schoolPref(student.highSchoolId) ? "（" + esc(store.schoolPref(student.highSchoolId)) + "）" : ""}</dd>
+          <dt>${t("pp.status")}</dt><dd>${store.isPlayerAt(student, todayISO) ? `<span class="badge green">${t("status.player")}</span>` : `<span class="badge">${t("status.withdraw")}</span>`}</dd>
+          ${pos ? `<dt>${t("pp.position")}</dt><dd><span class="badge gold">${esc(pos)}</span></dd>` : ""}
+          ${store.isPlayerAt(student, todayISO) && store.gradeAt(student, todayISO) ? `<dt>${t("pp.currentGrade")}</dt><dd>${store.gradeAt(student, todayISO)}${t("common.year")}</dd>` : ""}
+        </dl>
+      </div>
+    </div>`;
+    top.append(profile);
+
+    // ---- 自己ベスト ----
+    const pbCard = el("div", { class: "card pad-0" });
+    const pbs = store.personalBests(student.id, null, { include: state.include });
+    pbCard.append(el("div", { class: "card-title", style: "padding:16px 16px 0", html: `<h3>${t("pp.pb")}</h3>
+      <select id="pbInclude" style="min-height:30px">
+        <option value="all" ${state.include === "all" ? "selected" : ""}>${t("pl.includeAll")}</option>
+        <option value="enrolled" ${state.include === "enrolled" ? "selected" : ""}>${t("pl.includeEnrolled")}</option>
+      </select>` }));
+    const wrap = el("div", { style: "padding:0 4px 8px" });
+    pbCard.append(wrap);
+    renderTable(wrap, [
+      { label: t("col.item"), render: (x) => store.itemLabel(x.item) },
+      { label: t("col.record"), cls: "num", render: (x) => `<span class="time pb-cell">${scoreText(x.record)}</span>` },
+      { label: t("col.date"), cls: "num", render: (x) => fmtDateCell(x.record, student) },
+      { label: t("col.comp"), render: (x) => x.record.competitionId
+          ? esc(store.competitionById.get(x.record.competitionId)?.name || "—")
+          : esc(x.record.competitionName || "—") },
+    ], pbs, { empty: t("pp.noRecords") });
+    top.append(pbCard);
+    main.append(top);
+
+    // ---- PB 推移图表 ----
+    const chartCard = el("section", { class: "card", style: "margin-bottom:18px" });
+    const items = [...new Set(store.recordsOf(student.id, { include: state.include }).map((r) => r.item).filter(Boolean))];
+    if (!state.chartItem || !items.includes(state.chartItem)) state.chartItem = items[0] || null;
+    chartCard.append(el("div", { class: "card-title", html: `<h3>${t("pp.chart")}</h3>
+      <span class="hint">${t("pp.chartHint")}</span>` }));
+    const chartCtl = el("div", { class: "controls flat", style: "margin-bottom:12px" });
+    const chartSel = el("select", {}, items.map((k) => el("option", { value: k, text: store.itemLabel(k) })));
+    chartSel.value = state.chartItem || "";
+    chartCtl.append(chartSel);
+    chartCard.append(chartCtl);
+    const chartBox = el("div");
+    chartCard.append(chartBox);
+    main.append(chartCard);
+
+    if (state.chartItem) {
+      const hist = store.pbHistory(student.id, state.chartItem, null, { include: state.include });
+      chartBox.append(lineChart([{
+        name: student.name,
+        points: hist.map((r) => ({ x: r.date, y: r.seconds, label: scoreText(r) })),
+      }], { height: 260, valueFmt: (v) => formatScore(v, false) }));
+    }
+
+    // ---- 記録一覧 ----
+    const recCard = el("section", { class: "card pad-0", style: "margin-bottom:18px" });
+    recCard.append(el("div", { class: "card-title", style: "padding:16px 16px 0", html: `<h3>${t("pp.history")}</h3>
+      <select id="histItem">
+        <option value="all">${t("pp.historyAll")}</option>
+        ${items.map((k) => `<option value="${k}" ${state.histItem === k ? "selected" : ""}>${store.itemLabel(k)}</option>`).join("")}
+      </select>` }));
+    const histWrap = el("div", { style: "padding:0 4px 8px" });
+    recCard.append(histWrap);
+    const history = store.history(student.id, { include: state.include })
+      .filter((r) => state.histItem === "all" || r.item === state.histItem);
+    renderTable(histWrap, [
+      { label: t("common.date"), cls: "num", render: (r) => fmtDateCell(r, student) },
+      { label: t("col.comp"), render: (r) => r.competitionId
+          ? esc(store.competitionById.get(r.competitionId)?.name || "—")
+          : esc(r.competitionName || "—") },
+      { label: t("col.item"), render: (r) => store.itemLabel(r.item) },
+      { label: t("col.record"), cls: "num", render: (r) => r.seconds != null ? `<span class="time">${scoreText(r)}</span>` : "—" },
+      { label: t("col.rank"), cls: "mid", render: (r) => r.rank != null ? `${r.rank}${t("common.place")}` : "—" },
+      { label: t("col.remark"), render: (r) => remarkBadge(r.remark) },
+    ], history, { empty: t("pp.noRecords") });
+    main.append(recCard);
+
+    // ---- 駅伝 ----
+    const ek = store.ekidenHistory(student.id);
+    const ekCard = el("section", { class: "card pad-0" });
+    ekCard.append(el("div", { class: "card-title", style: "padding:16px 16px 0", html: `<h3>${t("pp.ekiden")}</h3>` }));
+    const ekWrap = el("div", { style: "padding:0 4px 8px" });
+    ekCard.append(ekWrap);
+    renderTable(ekWrap, [
+      { label: t("col.comp"), render: (r) => {
+          const round = store.ekidenRoundById.get(r.ekidenRoundId);
+          const itemName = round ? store.ekidenItemById.get(round.ekidenItemId)?.name || "" : "";
+          return round ? `<a href="race.html?type=ekiden&id=${round.id}">${esc(itemName + " " + round.round)}</a>` : "—";
+        } },
+      { label: t("col.interval"), cls: "mid", render: (r) => `${r.interval}${t("common.intervalUnit") || ""}` },
+      { label: t("col.distance"), cls: "num", render: (r) => r.distance != null ? r.distance + "km" : "—" },
+      { label: t("col.record"), cls: "num", render: (r) => `<span class="time">${scoreText(r)}</span>` },
+      { label: t("col.legRank"), cls: "mid", render: (r) => r.intervalRank != null ? `${r.intervalRank}${t("common.place")}` : "—" },
+      { label: t("col.remark"), render: (r) => remarkBadge(r.remark) },
+    ], ek, { empty: t("pp.noEkiden") });
+    main.append(ekCard);
+
+    // 事件
+    main.querySelector("#pbInclude").addEventListener("change", (e) => { state.include = e.target.value; render(); });
+    main.querySelector("#histItem").addEventListener("change", (e) => { state.histItem = e.target.value; render(); });
+    chartSel.addEventListener("change", (e) => { state.chartItem = e.target.value; render(); });
+  }
+
+  render();
+  onLang(render);
+}
+})();
+</script>
+</body>
+</html>

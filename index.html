@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>青山学院大学 陸上競技部 データベース</title>
+<meta name="description" content="青山学院大学陸上競技部の選手成績・大会記録・時点別ランキングを閲覧できる個人ファンサイト">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header data-site-header></header>
+
+<main>
+  <section class="page-head">
+    <h1 data-i18n="idx.title">チーム概況</h1>
+    <p data-i18n="idx.desc">選手・大会・記録をワンストップで。</p>
+  </section>
+
+  <section class="grid cols-4" id="stats" style="margin-bottom:18px">
+    <div class="card stat"><span class="label" data-i18n="idx.roster">在籍部員</span><span class="value" data-stat="roster">—</span></div>
+    <div class="card stat"><span class="label" data-i18n="idx.students">登録選手（歴代）</span><span class="value" data-stat="students">—</span></div>
+    <div class="card stat"><span class="label" data-i18n="idx.races">収録レース</span><span class="value" data-stat="races">—</span></div>
+    <div class="card stat"><span class="label" data-i18n="idx.records">収録記録</span><span class="value" data-stat="records">—</span></div>
+  </section>
+
+  <section class="card" style="margin-bottom:18px">
+    <div class="card-title">
+      <h3 data-i18n="idx.machine">時点ランキング（タイムマシン）</h3>
+      <span class="hint" data-i18n="idx.machineHint">例：2022年10月1日時点の5000m順位</span>
+    </div>
+    <div class="controls flat">
+      <div class="field">
+        <label data-i18n="common.date">日付</label>
+        <input type="date" id="goDate">
+      </div>
+      <div class="field">
+        <label data-i18n="common.item">種目</label>
+        <select id="goItem"></select>
+      </div>
+      <button class="btn" id="goBtn" data-i18n="idx.go">その時点を見る</button>
+      <div class="field">
+        <label data-i18n="idx.quick">よく使う時点</label>
+        <div class="quick-dates" id="quickDates"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" style="margin-bottom:14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+    <span style="font-size:12px;font-weight:700;color:var(--muted)" data-i18n="idx.currentRank">現役ランキング</span>
+    <div class="pill-row" id="topSex">
+      <button class="btn ghost active" data-sex="男" data-i18n="common.men">男子</button>
+      <button class="btn ghost" data-sex="女" data-i18n="common.women">女子</button>
+    </div>
+    <span class="hint" style="color:var(--muted);font-size:12px" data-i18n="idx.sexNote">種目は性別に合わせて自動で切り替わります</span>
+  </section>
+  <section class="grid cols-3" style="margin-bottom:18px" id="topLists"></section>
+
+  <section class="grid cols-2">
+    <div class="card">
+      <div class="card-title"><h3 data-i18n="idx.recentRaces">最近の大会</h3><a href="races.html" class="hint" data-i18n="idx.allRaces">全部見る →</a></div>
+      <div class="list-rows" id="recentRaces"></div>
+    </div>
+    <div class="card">
+      <div class="card-title"><h3 data-i18n="idx.recentRecords">最新記録</h3><span class="hint" data-i18n="idx.recentRecordsHint">直近の好記録</span></div>
+      <div class="list-rows" id="recentRecords"></div>
+    </div>
+  </section>
+
+  <p class="footnote" data-i18n="idx.footnote">
+    本サイトは個人が運営する非公式ファンサイトです。
+  </p>
+</main>
+
+<footer data-site-footer></footer>
+
+<script src="assets/i18n.js"></script>
+<script src="data/data.js"></script>
+<script src="assets/store.js"></script>
+<script src="assets/ui.js"></script>
+<script>
+const { loadStore, ITEM_ORDER, scoreText } = window.AGUStore;
+const { mountLayout, setGeneratedAt, renderTable, fmtDate, fmtDateCell, qs } = window.AGUUI;
+const { t, onLang } = window.AGUi18n;
+
+(async () => {
+
+mountLayout("index.html");
+const store = await loadStore();
+setGeneratedAt(store.generatedAt);
+
+const today = new Date();
+const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const todayISO = iso(today);
+
+const roster = store.rosterAsOf(todayISO);
+
+const render = () => {
+  document.title = t("idx.title") + " | " + t("brand.title");
+
+  document.querySelector('[data-stat="roster"]').innerHTML = `${roster.length}<small>${t("common.person")}</small>`;
+  document.querySelector('[data-stat="students"]').innerHTML = `${store.students.length}<small>${t("common.person")}</small>`;
+  document.querySelector('[data-stat="races"]').innerHTML =
+    `${store.competitions.length + store.ekidenRounds.length}<small>${t("common.race")}</small>`;
+  document.querySelector('[data-stat="records"]').innerHTML =
+    `${store.records.length + store.ekidenRecords.length}<small>${t("common.race")}</small>`;
+
+  // --- 时点查询控件 ---
+  const itemSelect = document.getElementById("goItem");
+  const itemKeys = ITEM_ORDER.filter((k) => store.records.some((r) => r.item === k));
+  if (!itemSelect.dataset.init) {
+    itemSelect.innerHTML = itemKeys.map((k) => `<option value="${k}">${store.itemLabel(k)}</option>`).join("");
+    itemSelect.value = itemKeys.includes("five_5000m") ? "five_5000m" : itemKeys[0];
+    itemSelect.dataset.init = "1";
+  }
+  const dateInput = document.getElementById("goDate");
+  dateInput.value = todayISO;
+  dateInput.max = todayISO;
+  document.getElementById("goBtn").onclick = () => {
+    if (!dateInput.value) return;
+    location.href = `rankings.html?date=${dateInput.value}&item=${itemSelect.value}`;
+  };
+
+  const quick = document.getElementById("quickDates");
+  quick.textContent = "";
+  const span = store.rosterSpan;
+  const quickDates = [];
+  for (let y = (span.max || today.getFullYear()); y >= (span.min || 2015); y--) {
+    quickDates.push(`${y}-10-01`, `${y}-01-01`);
+  }
+  for (const d of quickDates.slice(0, 8)) {
+    const a = document.createElement("button");
+    a.className = "btn ghost";
+    a.textContent = d.slice(2, 7).replace("-", "/");
+    a.addEventListener("click", () => location.href = `rankings.html?date=${d}&item=${itemSelect.value}`);
+    quick.append(a);
+  }
+
+  // --- 现役 TOP10 ---
+  const TOP_ITEMS = {
+    "男": ["five_5000m", "ten_10000m", "half_marathon"],
+    "女": ["fifteen_1500m", "three_3000m", "five_5000m", "ten_10000m", "half_marathon"],
+  };
+  const topLists = document.getElementById("topLists");
+  let topSex = document.querySelector("#topSex .active")?.dataset.sex || "男";
+
+  const renderTop = () => {
+    topLists.textContent = "";
+    for (const item of TOP_ITEMS[topSex]) {
+      if (!store.records.some((r) => r.item === item)) continue;
+      const rows = store.rankingAsOf(todayISO, item, { scope: "active", limit: 10, sex: topSex });
+      if (!rows.length) continue;
+      const card = document.createElement("div");
+      card.className = "card pad-0";
+      card.innerHTML = `<div class="card-title" style="padding:16px 16px 0"><h3>${t("idx.current")}${topSex === "女" ? t("common.women") : t("common.men")} ${store.itemLabel(item)}</h3>
+        <a class="hint" href="rankings.html?date=${todayISO}&item=${item}&sex=${topSex}">${t("idx.rankDetail")}</a></div>
+        <div style="padding:0 4px 8px"></div>`;
+      topLists.append(card);
+      renderTable(card.querySelector("div:last-child"), [
+        { label: t("col.rank"), cls: "mid", render: (r) => `<span class="rank">${r.rank}</span>` },
+        { label: t("col.name"), cls: "name", render: (r) => `<a href="player.html?id=${r.student.id}">${r.student.name}</a>` },
+        { label: t("col.grade"), cls: "mid", render: (r) => r.grade ? r.grade + t("common.year") : "—" },
+        { label: t("col.record"), cls: "num", render: (r) => `<span class="time">${scoreText(r.record)}</span>` },
+        { label: t("col.date"), cls: "num", render: (r) => fmtDateCell(r.record, r.student) },
+      ], rows);
+    }
+    if (!topLists.children.length) topLists.innerHTML = `<div class="card empty">${t("idx.noRecords")}</div>`;
+  };
+
+  document.querySelectorAll("#topSex [data-sex]").forEach((b) => {
+    if (b._bound) return;
+    b._bound = true;
+    b.addEventListener("click", () => {
+      document.querySelectorAll("#topSex [data-sex]").forEach((x) => x.classList.toggle("active", x === b));
+      topSex = b.dataset.sex;
+      renderTop();
+    });
+  });
+  renderTop();
+
+  // --- 最近大会 ---
+  const racesEl = document.getElementById("recentRaces");
+  const recent = [
+    ...store.competitions.map((c) => ({ kind: "race", ...c })),
+    ...store.ekidenRounds.map((r) => ({
+      kind: "ekiden",
+      id: r.id,
+      name: (store.ekidenItemById.get(r.ekidenItemId)?.name || "") + " " + r.round,
+      date: r.date,
+    })),
+  ].sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 8);
+
+  racesEl.textContent = "";
+  if (recent.length) {
+    recent.forEach((r) => {
+      const href = r.kind === "ekiden" ? `race.html?type=ekiden&id=${r.id}` : `race.html?type=competition&id=${r.id}`;
+      const row = document.createElement("a");
+      row.className = "row-item";
+      row.href = href;
+      row.innerHTML = `<span class="date">${fmtDate(r.date)}</span>
+        <span class="txt">${r.name}</span>
+        <span class="badge ${r.kind === "ekiden" ? "green" : ""}">${r.kind === "ekiden" ? t("rc.kindEkiden") : t("rc.kindRace")}</span>`;
+      racesEl.append(row);
+    });
+  } else {
+    racesEl.innerHTML = `<div class="empty">${t("idx.noRaces")}</div>`;
+  }
+
+  // --- 最新记录 ---
+  const recEl = document.getElementById("recentRecords");
+  const recentRecords = store.records
+    .filter((r) => r.date && r.seconds != null && r.rank != null && r.rank <= 8)
+    .sort((a, b) => (b.date || "").localeCompare(a.date || "") || a.seconds - b.seconds)
+    .slice(0, 10);
+  recEl.textContent = "";
+  if (recentRecords.length) {
+    recentRecords.forEach((r) => {
+      const s = store.student(r.studentId);
+      const row = document.createElement("a");
+      row.className = "row-item";
+      row.href = r.competitionId ? `race.html?type=competition&id=${r.competitionId}` : `player.html?id=${r.studentId}`;
+      row.innerHTML = `<span class="date">${fmtDate(r.date)}</span>
+        <span class="txt">${s ? s.name : "—"} <span class="badge dim">${store.itemLabel(r.item)}</span></span>
+        <span class="time">${scoreText(r)}</span>
+        <span class="badge ${r.rank === 1 ? "gold" : ""}">${r.rank}${t("common.place")}</span>`;
+      recEl.append(row);
+    });
+  } else {
+    recEl.innerHTML = `<div class="empty">${t("idx.noRecords")}</div>`;
+  }
+};
+
+render();
+onLang(render);
+})();
+</script>
+</body>
+</html>

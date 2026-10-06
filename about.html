@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>このサイトについて | 青山学院大学 陸上競技部 データベース</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header data-site-header></header>
+
+<main>
+  <section class="page-head">
+    <div class="breadcrumb"><a href="index.html" data-i18n="nav.overview">概況</a> / <span data-i18n="ab.title">このサイトについて</span></div>
+    <h1 data-i18n="ab.title">このサイトについて</h1>
+    <p data-i18n="ab.desc">選手成績・大会記録・時点別ランキングを閲覧できる個人ファンサイトです。</p>
+  </section>
+
+  <section class="card" style="margin-bottom:18px">
+    <div class="card-title"><h3 data-i18n="ab.h1">サイトについて</h3></div>
+    <p data-i18n="ab.p1">本サイトは個人が運営する非公式のファンサイトです。</p>
+  </section>
+
+  <section class="card" style="margin-bottom:18px">
+    <div class="card-title"><h3 data-i18n="ab.h2">データについて</h3></div>
+    <p data-i18n="ab.p2">収録している選手・成績データは公開情報をもとに作成しています。</p>
+  </section>
+
+  <section class="card" style="margin-bottom:18px">
+    <div class="card-title"><h3 data-i18n="ab.h3">時点ランキングについて</h3></div>
+    <p data-i18n="ab.p3">「時点ランキング」は、指定した日付の時点で判明している記録のみを使って部内順位を計算します。</p>
+  </section>
+
+  <section class="card">
+    <div class="card-title"><h3 data-i18n="ab.h4">お問い合わせ</h3></div>
+    <p data-i18n="ab.p4">データの修正依頼やご意見は、GitHub リポジトリの Issue までお願いします。</p>
+  </section>
+</main>
+
+<footer data-site-footer></footer>
+
+<script src="assets/i18n.js"></script>
+<script src="data/data.js"></script>
+<script src="assets/store.js"></script>
+<script src="assets/ui.js"></script>
+<script>
+const { loadStore } = window.AGUStore;
+const { mountLayout, setGeneratedAt } = window.AGUUI;
+const { t, onLang } = window.AGUi18n;
+
+(async () => {
+
+mountLayout("about.html");
+const store = await loadStore();
+setGeneratedAt(store.generatedAt);
+
+onLang(() => { document.title = t("ab.title") + " | " + t("brand.title"); });
+document.title = t("ab.title") + " | " + t("brand.title");
+})();
+</script>
+</body>
+</html>
