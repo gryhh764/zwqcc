@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>大会・記録会 | 青山学院大学 陸上競技部 データベース</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header data-site-header></header>
+
+<main>
+  <section class="page-head">
+    <div class="breadcrumb"><a href="index.html" data-i18n="nav.overview">概況</a> / <span data-i18n="rc.title">大会・記録会</span></div>
+    <h1 data-i18n="rc.title">大会・記録会</h1>
+    <p data-i18n="rc.desc">収録している大会・記録会・駅伝の一覧。</p>
+  </section>
+
+  <div id="out"></div>
+</main>
+
+<footer data-site-footer></footer>
+
+<script src="assets/i18n.js"></script>
+<script src="data/data.js"></script>
+<script src="assets/store.js"></script>
+<script src="assets/ui.js"></script>
+<script>
+const { loadStore } = window.AGUStore;
+const { mountLayout, fmtDate, esc } = window.AGUUI;
+const { t, onLang } = window.AGUi18n;
+
+(async () => {
+
+mountLayout("races.html");
+const store = await loadStore();
+
+function render() {
+  document.title = t("rc.title") + " | " + t("brand.title");
+  const out = document.getElementById("out");
+  out.textContent = "";
+
+  const items = [
+    ...store.competitions.map((c) => ({ kind: "race", id: c.id, name: c.name, date: c.date, location: c.location, count: (store.recordsByCompetition.get(c.id) || []).length })),
+    ...store.ekidenRounds.map((r) => ({
+      kind: "ekiden", id: r.id,
+      name: (store.ekidenItemById.get(r.ekidenItemId)?.name || "") + " " + r.round,
+      date: r.date, location: "", count: (store.ekidenRecordsByRound.get(r.id) || []).length,
+    })),
+  ].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+
+  if (!items.length) {
+    out.innerHTML = `<div class="card empty">${t("rc.noRaces")}</div>`;
+    return;
+  }
+
+  const byYear = new Map();
+  for (const x of items) {
+    const y = String(x.date || "").slice(0, 4) || "—";
+    if (!byYear.has(y)) byYear.set(y, []);
+    byYear.get(y).push(x);
+  }
+
+  for (const [year, list] of byYear) {
+    const sec = document.createElement("section");
+    sec.style.marginBottom = "18px";
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `<div class="card-title"><h3>${year}${t("common.year")}</h3>
+      <span class="hint">${list.length} ${t("common.race")}</span></div>`;
+    const rows = document.createElement("div");
+    rows.className = "list-rows";
+    for (const x of list) {
+      const href = x.kind === "ekiden" ? `race.html?type=ekiden&id=${x.id}` : `race.html?type=competition&id=${x.id}`;
+      const a = document.createElement("a");
+      a.className = "row-item";
+      a.href = href;
+      a.innerHTML = `<span class="date">${fmtDate(x.date)}</span>
+        <span class="txt">${esc(x.name)}${x.location ? `<span class="badge dim">${esc(x.location)}</span>` : ""}</span>
+        <span class="badge dim">${x.count} ${t("rc.participants")}</span>
+        <span class="badge ${x.kind === "ekiden" ? "green" : ""}">${x.kind === "ekiden" ? t("rc.kindEkiden") : t("rc.kindRace")}</span>`;
+      rows.append(a);
+    }
+    card.append(rows);
+    sec.append(card);
+    out.append(sec);
+  }
+}
+
+render();
+onLang(render);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>記録一覧 | 青山学院大学 陸上競技部 データベース</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header data-site-header></header>
+
+<main>
+  <section class="page-head">
+    <div class="breadcrumb"><a href="index.html" data-i18n="nav.overview">概況</a> / <span data-i18n="rd.title">記録一覧</span></div>
+    <h1 data-i18n="rd.title">記録一覧</h1>
+    <p data-i18n="rd.desc">収録しているすべての記録。</p>
+  </section>
+
+  <section class="controls">
+    <div class="field">
+      <label data-i18n="common.item">種目</label>
+      <select id="itemSel"><option value="all" data-i18n="common.all">すべて</option></select>
+    </div>
+    <div class="field">
+      <label data-i18n="common.sex">性別</label>
+      <select id="sexSel">
+        <option value="all" data-i18n="common.all">すべて</option>
+        <option value="男" data-i18n="common.men">男子</option>
+        <option value="女" data-i18n="common.women">女子</option>
+      </select>
+    </div>
+    <div class="field">
+      <label data-i18n="rd.season">年度</label>
+      <select id="seasonSel"><option value="all" data-i18n="rd.seasonAll">すべて</option></select>
+    </div>
+    <div class="field" style="flex:1 1 180px">
+      <label data-i18n="common.name">選手</label>
+      <input type="search" id="search" placeholder="">
+    </div>
+    <div class="field">
+      <label data-i18n="rd.onlyTop8">8位以内のみ</label>
+      <label class="switch"><input type="checkbox" id="chkTop8"><span>8位以内のみ</span></label>
+    </div>
+    <div class="field">
+      <label data-i18n="rd.onlyPB">自己ベストのみ</label>
+      <label class="switch"><input type="checkbox" id="chkPB"><span>PB</span></label>
+    </div>
+    <div class="field">
+      <label data-i18n="rd.onlyFinished">完走のみ</label>
+      <label class="switch"><input type="checkbox" id="chkFin" checked><span>完走のみ</span></label>
+    </div>
+  </section>
+
+  <div style="margin-bottom:12px;color:var(--muted);font-size:12px"><span id="count">0</span> <span data-i18n="rk.rows">件</span></div>
+  <section class="card pad-0">
+    <div style="padding:4px" id="tableBox"></div>
+  </section>
+</main>
+
+<footer data-site-footer></footer>
+
+<script src="assets/i18n.js"></script>
+<script src="data/data.js"></script>
+<script src="assets/store.js"></script>
+<script src="assets/ui.js"></script>
+<script>
+const { loadStore, ITEM_ORDER, scoreText, academicYear } = window.AGUStore;
+const { mountLayout, renderTable, fmtDateCell, remarkBadge, esc } = window.AGUUI;
+const { t, onLang } = window.AGUi18n;
+
+(async () => {
+
+mountLayout("records.html");
+const store = await loadStore();
+
+const $ = (id) => document.getElementById(id);
+
+const state = {
+  item: "all", sex: "all", season: "all", search: "",
+  top8: false, pb: false, finished: true,
+  sort: { key: "date", dir: -1 },
+};
+
+const items = ITEM_ORDER.filter((k) => store.records.some((r) => r.item === k));
+const seasons = [...new Set(store.records.map((r) => academicYear(r.date)).filter(Boolean))]
+  .sort((a, b) => b - a);
+
+const isPB = (r) => {
+  const best = store.pbAsOf(r.studentId, r.item, "9999-12-31");
+  return !!(best && best.id === r.id);
+};
+
+function filtered() {
+  const q = state.search.trim().toLowerCase();
+  return store.records.filter((r) => {
+    if (state.item !== "all" && r.item !== state.item) return false;
+    const s = store.student(r.studentId);
+    if (state.sex !== "all" && (s?.sex || "男") !== state.sex) return false;
+    if (state.season !== "all" && academicYear(r.date) !== +state.season) return false;
+    if (q && !(s ? `${s.name} ${s.kana} ${s.en}`.toLowerCase().includes(q) : false)) return false;
+    if (state.top8 && !(r.rank != null && r.rank <= 8)) return false;
+    if (state.pb && !isPB(r)) return false;
+    if (state.finished && r.isFinished === false) return false;
+    return true;
+  });
+}
+
+function render() {
+  document.title = t("rd.title") + " | " + t("brand.title");
+
+  const itemSel = $("itemSel");
+  itemSel.innerHTML = `<option value="all">${t("common.all")}</option>` +
+    items.map((k) => `<option value="${k}">${store.itemLabel(k)}</option>`).join("");
+  itemSel.value = state.item;
+
+  const seasonSel = $("seasonSel");
+  seasonSel.innerHTML = `<option value="all">${t("rd.seasonAll")}</option>` +
+    seasons.map((y) => `<option value="${y}">${y}</option>`).join("");
+  seasonSel.value = state.season;
+
+  $("sexSel").value = state.sex;
+  $("chkTop8").checked = state.top8;
+  $("chkPB").checked = state.pb;
+  $("chkFin").checked = state.finished;
+
+  const list = filtered()
+    .map((r) => ({ r, s: store.student(r.studentId), pb: isPB(r) }))
+    .sort((a, b) => {
+      const { key, dir } = state.sort;
+      let v = 0;
+      if (key === "date") v = (a.r.date || "").localeCompare(b.r.date || "");
+      else if (key === "score") v = (a.r.seconds ?? Infinity) - (b.r.seconds ?? Infinity);
+      else if (key === "rank") v = (a.r.rank ?? 999) - (b.r.rank ?? 999);
+      else if (key === "name") v = (a.s?.name || "").localeCompare(b.s?.name || "", "ja");
+      return v * dir;
+    });
+
+  $("count").textContent = list.length;
+
+  const onSort = (key) => {
+    if (state.sort.key === key) state.sort.dir = -state.sort.dir;
+    else state.sort = { key, dir: key === "rank" || key === "score" ? 1 : -1 };
+    render();
+  };
+
+  renderTable($("tableBox"), [
+    { label: t("common.date"), cls: "num", sortKey: "date", render: (x) => fmtDateCell(x.r, x.s) },
+    { label: t("col.name"), cls: "name", sortKey: "name", render: (x) => x.s ? `<a href="player.html?id=${x.s.id}">${esc(x.s.name)}</a>` : "—" },
+    { label: t("col.item"), render: (x) => store.itemLabel(x.r.item) },
+    { label: t("col.comp"), render: (x) => x.r.competitionId
+        ? esc(store.competitionById.get(x.r.competitionId)?.name || "—")
+        : esc(x.r.competitionName || "—") },
+    { label: t("col.record"), cls: "num", sortKey: "score", render: (x) => x.r.seconds != null
+        ? `<span class="time${x.pb ? " pb-cell" : ""}">${scoreText(x.r)}</span>` : "—" },
+    { label: t("col.rank"), cls: "mid", sortKey: "rank", render: (x) => x.r.rank != null ? `${x.r.rank}${t("common.place")}` : "—" },
+    { label: t("col.grade"), cls: "mid", render: (x) => {
+        const g = x.s ? store.gradeOfRecord(x.r, x.s) : null;
+        return g === 0 ? t("g.hs") : (g ? g + t("common.year") : "—");
+      } },
+    { label: t("col.remark"), render: (x) => remarkBadge(x.r.remark) },
+  ], list, { empty: t("common.empty"), onSort, sortState: state.sort });
+}
+
+$("itemSel").addEventListener("change", (e) => { state.item = e.target.value; render(); });
+$("sexSel").addEventListener("change", (e) => { state.sex = e.target.value; render(); });
+$("seasonSel").addEventListener("change", (e) => { state.season = e.target.value; render(); });
+$("search").addEventListener("input", (e) => { state.search = e.target.value; render(); });
+$("chkTop8").addEventListener("change", (e) => { state.top8 = e.target.checked; render(); });
+$("chkPB").addEventListener("change", (e) => { state.pb = e.target.checked; render(); });
+$("chkFin").addEventListener("change", (e) => { state.finished = e.target.checked; render(); });
+
+render();
+onLang(render);
+})();
+</script>
+</body>
+</html>

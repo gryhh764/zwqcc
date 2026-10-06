@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>部員一覧 | 青山学院大学 陸上競技部 データベース</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header data-site-header></header>
+
+<main>
+  <section class="page-head">
+    <div class="breadcrumb"><a href="index.html" data-i18n="nav.overview">概況</a> / <span data-i18n="pl.title">部員一覧</span></div>
+    <h1 data-i18n="pl.title">部員一覧</h1>
+    <p data-i18n="pl.desc">現役・OB を含む登録選手の一覧。</p>
+  </section>
+
+  <section class="controls">
+    <div class="field" style="flex:1 1 220px">
+      <label data-i18n="common.search">検索</label>
+      <input type="search" id="search" data-i18n-attr="placeholder" data-i18n="pl.searchPh" placeholder="検索（氏名・かな・英語・高校）">
+    </div>
+    <div class="field">
+      <label data-i18n="pl.year">入学年</label>
+      <select id="yearSel"><option value="all" data-i18n="common.all">すべて</option></select>
+    </div>
+    <div class="field">
+      <label data-i18n="common.sex">性別</label>
+      <select id="sexSel">
+        <option value="男" data-i18n="common.men">男子</option>
+        <option value="女" data-i18n="common.women">女子</option>
+        <option value="all" data-i18n="common.all">すべて</option>
+      </select>
+    </div>
+    <div class="field">
+      <label data-i18n="pl.grade">学年</label>
+      <select id="gradeSel">
+        <option value="all" data-i18n="pl.gradeAll">すべて</option>
+        <option value="1" data-i18n="g.1">1年</option>
+        <option value="2" data-i18n="g.2">2年</option>
+        <option value="3" data-i18n="g.3">3年</option>
+        <option value="4" data-i18n="g.4">4年</option>
+      </select>
+    </div>
+    <div class="field">
+      <label data-i18n="pl.status">状態</label>
+      <select id="statusSel">
+        <option value="active" data-i18n="pl.statusActive">在籍のみ</option>
+        <option value="all" data-i18n="pl.statusAll">すべて（退部含む）</option>
+        <option value="withdraw" data-i18n="pl.statusWithdraw">退部・転向のみ</option>
+      </select>
+    </div>
+    <div class="field">
+      <label data-i18n="pl.hs">出身高校</label>
+      <select id="hsSel"><option value="all" data-i18n="common.all">すべて</option></select>
+    </div>
+    <div class="field">
+      <label data-i18n="pl.include">成績包含</label>
+      <select id="includeSel">
+        <option value="all" data-i18n="pl.includeAll">全部成績（高校時代を含む）</option>
+        <option value="enrolled" data-i18n="pl.includeEnrolled">在学中のみ</option>
+      </select>
+    </div>
+    <div class="field">
+      <label data-i18n="pl.view">表示</label>
+      <div class="pill-row">
+        <button class="btn ghost active" id="viewCard" data-i18n="pl.viewCard">カード</button>
+        <button class="btn ghost" id="viewTable" data-i18n="pl.viewTable">テーブル</button>
+      </div>
+    </div>
+    <div class="field">
+      <label>&nbsp;</label>
+      <button class="btn ghost" id="resetBtn" data-i18n="common.reset">リセット</button>
+    </div>
+  </section>
+
+  <div style="margin-bottom:12px;color:var(--muted);font-size:12px"><span id="count">0</span> <span data-i18n="pl.count">件</span></div>
+  <div id="out"></div>
+</main>
+
+<footer data-site-footer></footer>
+
+<script src="assets/i18n.js"></script>
+<script src="data/data.js"></script>
+<script src="assets/store.js"></script>
+<script src="assets/ui.js"></script>
+<script>
+const { loadStore, scoreText } = window.AGUStore;
+const { mountLayout, renderTable, avatarHTML, esc } = window.AGUUI;
+const { t, onLang } = window.AGUi18n;
+
+(async () => {
+
+mountLayout("players.html");
+const store = await loadStore();
+
+const $ = (id) => document.getElementById(id);
+
+const today = new Date();
+const todayISO = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
+const state = {
+  search: "", year: "all", sex: "男", grade: "all", status: "active", hs: "all", include: "all", view: "card",
+};
+
+const PB_ITEMS = {
+  "男": ["five_5000m", "ten_10000m", "half_marathon"],
+  "女": ["fifteen_1500m", "three_3000m", "five_5000m"],
+};
+
+const years = [...new Set(store.students.map((s) => s.enrollmentYear))].sort((a, b) => b - a);
+const schools = store.schools.slice().sort((a, b) => a.name.localeCompare(b.name, "ja"));
+
+function filtered() {
+  const q = state.search.trim().toLowerCase();
+  return store.students.filter((s) => {
+    if (state.year !== "all" && s.enrollmentYear !== +state.year) return false;
+    if (state.sex !== "all" && s.sex !== state.sex) return false;
+    if (state.status === "active" && !store.isPlayerAt(s, todayISO)) return false;
+    if (state.status === "withdraw" && store.isPlayerAt(s, todayISO)) return false;
+    if (state.grade !== "all") {
+      const g = store.gradeAt(s, todayISO);
+      if (g !== +state.grade) return false;
+    }
+    if (state.hs !== "all" && s.highSchoolId !== +state.hs) return false;
+    if (q) {
+      const hs = store.schoolName(s.highSchoolId) || "";
+      const hay = `${s.name} ${s.kana} ${s.en} ${hs}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+function pbsOf(s) {
+  const list = store.personalBests(s.id, null, { include: state.include });
+  const map = new Map(list.map((x) => [x.item, x.record]));
+  return PB_ITEMS[s.sex].map((item) => ({ item, rec: map.get(item) })).filter((x) => x.rec);
+}
+
+function renderCardView(list) {
+  const grid = document.createElement("div");
+  grid.className = "player-grid";
+  for (const s of list) {
+    const pbs = pbsOf(s);
+    const g = store.gradeAt(s, todayISO);
+    const a = document.createElement("a");
+    a.className = "player-card";
+    a.href = `player.html?id=${s.id}`;
+    const statusBadge = store.isPlayerAt(s, todayISO)
+      ? (g ? `<span class="badge green">${g}${t("common.year")}</span>` : "")
+      : `<span class="badge">${t("status.withdraw")}</span>`;
+    a.innerHTML = `
+      <div class="top">${avatarHTML(s)}<div>
+        <div class="nm">${esc(s.name)}</div>
+        <div class="meta">${s.enrollmentYear}${t("common.year")}${t("pl.year") ? "" : ""} · ${esc(store.schoolName(s.highSchoolId) || "—")}</div>
+        <div class="meta">${statusBadge}</div>
+      </div></div>
+      <div class="pbs">${pbs.map((p) => `<span>${store.itemLabel(p.item)}<b>${scoreText(p.rec)}</b></span>`).join("")}</div>`;
+    grid.append(a);
+  }
+  return grid;
+}
+
+function renderTableView(list) {
+  const box = document.createElement("div");
+  box.className = "card pad-0";
+  const rows = list.map((s) => {
+    const pbs = pbsOf(s);
+    const pmap = new Map(pbs.map((p) => [p.item, p.rec]));
+    const g = store.gradeAt(s, todayISO);
+    return {
+      s, g,
+      pb: (i) => {
+        const rec = pmap.get(PB_ITEMS[s.sex][i]);
+        return rec ? scoreText(rec) : "—";
+      },
+      statusText: store.isPlayerAt(s, todayISO) ? (g ? `${g}${t("common.year")}` : t("status.player")) : t("status.withdraw"),
+    };
+  });
+  const itemCols = PB_ITEMS[state.sex === "all" ? "男" : state.sex].map((item, i) => ({
+    label: store.itemLabel(item), cls: "num", render: (r) => `<span class="time">${r.pb(i)}</span>`,
+  }));
+  renderTable(box, [
+    { label: t("col.name"), cls: "name", render: (r) => `${avatarHTML(r.s)}&nbsp; <a href="player.html?id=${r.s.id}">${esc(r.s.name)}</a>` },
+    { label: t("col.sex"), cls: "mid", render: (r) => r.s.sex },
+    { label: t("col.enrollment"), cls: "mid", render: (r) => r.s.enrollmentYear },
+    { label: t("col.grade"), cls: "mid", render: (r) => r.statusText },
+    { label: t("col.hs"), render: (r) => esc(store.schoolName(r.s.highSchoolId) || "—") },
+    ...(state.sex === "all" ? [] : itemCols),
+  ], rows, { empty: t("common.empty") });
+  return box;
+}
+
+function render() {
+  document.title = t("pl.title") + " | " + t("brand.title");
+
+  const yearSel = $("yearSel");
+  yearSel.innerHTML = `<option value="all">${t("common.all")}</option>` +
+    years.map((y) => `<option value="${y}">${y}</option>`).join("");
+  yearSel.value = state.year;
+
+  const hsSel = $("hsSel");
+  hsSel.innerHTML = `<option value="all">${t("common.all")}</option>` +
+    schools.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join("");
+  hsSel.value = state.hs;
+
+  $("sexSel").value = state.sex;
+  $("gradeSel").value = state.grade;
+  $("statusSel").value = state.status;
+  $("includeSel").value = state.include;
+  $("viewCard").classList.toggle("active", state.view === "card");
+  $("viewTable").classList.toggle("active", state.view === "table");
+
+  const list = filtered();
+  $("count").textContent = list.length;
+  const out = $("out");
+  out.textContent = "";
+  if (!list.length) {
+    out.innerHTML = `<div class="card empty">${t("common.empty")}</div>`;
+    return;
+  }
+  out.append(state.view === "card" ? renderCardView(list) : renderTableView(list));
+}
+
+$("search").addEventListener("input", (e) => { state.search = e.target.value; render(); });
+$("yearSel").addEventListener("change", (e) => { state.year = e.target.value; render(); });
+$("sexSel").addEventListener("change", (e) => { state.sex = e.target.value; render(); });
+$("gradeSel").addEventListener("change", (e) => { state.grade = e.target.value; render(); });
+$("statusSel").addEventListener("change", (e) => { state.status = e.target.value; render(); });
+$("hsSel").addEventListener("change", (e) => { state.hs = e.target.value; render(); });
+$("includeSel").addEventListener("change", (e) => { state.include = e.target.value; render(); });
+$("viewCard").addEventListener("click", () => { state.view = "card"; render(); });
+$("viewTable").addEventListener("click", () => { state.view = "table"; render(); });
+$("resetBtn").addEventListener("click", () => {
+  state.search = ""; state.year = "all"; state.sex = "男"; state.grade = "all";
+  state.status = "active"; state.hs = "all"; state.include = "all"; state.view = "card";
+  $("search").value = "";
+  render();
+});
+
+render();
+onLang(render);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>三大駅伝 出場者 | 青山学院大学 陸上競技部 データベース</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header data-site-header></header>
+
+<main>
+  <section class="page-head">
+    <div class="breadcrumb"><a href="index.html" data-i18n="nav.overview">概況</a> / <span data-i18n="ek.title">三大駅伝 出場者</span></div>
+    <h1 data-i18n="ek.title">三大駅伝 出場者</h1>
+    <p data-i18n="ek.desc">出雲駅伝・全日本大学駅伝・箱根駅伝の出走記録マトリクス。</p>
+  </section>
+
+  <section class="card" style="margin-bottom:14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+    <span style="font-size:12px;font-weight:700;color:var(--muted)" data-i18n="ek.legend">区間順位</span>
+    <span class="ek-key r1">1</span>
+    <span class="ek-key r2">2</span>
+    <span class="ek-key r3">3</span>
+    <span class="hint" style="color:var(--muted);font-size:12px" data-i18n="ek.gradeKey">学年（出場時）</span>
+  </section>
+
+  <section class="card pad-0">
+    <div class="table-wrap" style="padding:16px">
+      <div id="matrix"></div>
+    </div>
+  </section>
+
+  <p class="footnote" data-i18n="ek.desc">セルは「区間・タイム」、色は区間順位。</p>
+</main>
+
+<footer data-site-footer></footer>
+
+<script src="assets/i18n.js"></script>
+<script src="data/data.js"></script>
+<script src="assets/store.js"></script>
+<script src="assets/ui.js"></script>
+<script>
+const { loadStore, scoreText } = window.AGUStore;
+const { mountLayout, fmtDate, esc } = window.AGUUI;
+const { t, onLang } = window.AGUi18n;
+
+(async () => {
+
+mountLayout("ekiden-members.html");
+const store = await loadStore();
+
+function render() {
+  document.title = t("ek.title") + " | " + t("brand.title");
+
+  const box = document.getElementById("matrix");
+  box.textContent = "";
+
+  const rounds = store.ekidenRounds.slice().sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+  const participants = new Map();
+  for (const r of store.ekidenRecords) {
+    const sid = r.studentId;
+    const s = store.student(sid);
+    if (!s) continue;
+    if (!participants.has(sid)) participants.set(sid, { s, cells: new Map() });
+    participants.get(sid).cells.set(r.ekidenRoundId, r);
+  }
+
+  if (!participants.size) {
+    box.innerHTML = `<div class="empty">${t("ek.noData")}</div>`;
+    return;
+  }
+
+  const list = [...participants.values()].sort((a, b) =>
+    (a.s.enrollmentYear - b.s.enrollmentYear) || a.s.name.localeCompare(b.s.name, "ja"));
+
+  const table = document.createElement("table");
+  table.className = "ek-matrix";
+
+  const thead = document.createElement("thead");
+  let hr = "<tr><th></th>";
+  for (const r of rounds) {
+    const itemName = store.ekidenItemById.get(r.ekidenItemId)?.name || "";
+    hr += `<th>${esc(itemName)}<br>${esc(r.round)}<br><span style="font-weight:400">${fmtDate(r.date)}</span></th>`;
+  }
+  hr += "</tr>";
+  thead.innerHTML = hr;
+  table.append(thead);
+
+  const tbody = document.createElement("tbody");
+  for (const p of list) {
+    let tr = `<tr><th><a href="player.html?id=${p.s.id}">${esc(p.s.name)}</a><br><span style="font-weight:400;font-size:11px">${p.s.enrollmentYear}${t("common.year")}${t("pl.year") ? "" : ""}</span></th>`;
+    for (const r of rounds) {
+      const rec = p.cells.get(r.id);
+      if (!rec) { tr += `<td class="ek-cell empty"></td>`; continue; }
+      const cls = rec.intervalRank <= 3 ? "r" + rec.intervalRank : "";
+      const isRec = /区間新|区間記録/.test(rec.remark || "");
+      const g = store.gradeAt(p.s, r.date);
+      tr += `<td class="ek-cell ${cls}${isRec ? " rec" : ""}">
+        <span class="ek-pos">${rec.interval}${t("common.intervalUnit")}${g ? `<span style="font-weight:400;color:var(--muted)"> · ${g}${t("common.year")}</span>` : ""}</span>
+        <span class="ek-time">${scoreText(rec)}${rec.intervalRank ? " · " + rec.intervalRank + t("common.place") : ""}</span>
+      </td>`;
+    }
+    tr += "</tr>";
+    tbody.innerHTML += tr;
+  }
+  table.append(tbody);
+  box.append(table);
+}
+
+render();
+onLang(render);
+})();
+</script>
+</body>
+</html>
